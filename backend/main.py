@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, date
@@ -19,6 +19,10 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import date, datetime, timedelta
+import jwt
+from typing import Optional
+from datetime import timedelta as _timedelta
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
 import json
 
@@ -28,6 +32,35 @@ from .models import Base, User, EssaySubmission, Checkin, DailyPracticeRecord
 from .seed_data import seed as seed_data
 
 app = FastAPI(title="Online Tutor MVP")
+
+# Simple JWT-based auth (basic MVP)
+SECRET_KEY = "CHANGE_ME_TO_SECURE"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+def create_access_token(data: dict, expires_delta: Optional[__import__('datetime').timedelta] = None):
+    to_encode = data.copy()
+    exp = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": exp})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def verify_token(token: str) -> Optional[str]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("sub")
+    except Exception:
+        return None
+
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+token_auth_scheme = HTTPBearer()
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(token_auth_scheme)):
+    token = credentials.credentials
+    user_id = verify_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or missing token")
+    return user_id
+
 
 # Simple in-memory cache-like data to seed initial content when DB is empty
 _seed_cache = seed_data()
@@ -150,11 +183,15 @@ async def submit_essay(title: Optional[str] = None, text: Optional[str] = None):
 
 
 @app.get("/daily-practice")
-async def daily_practice(user_id: Optional[str] = None):
+async def daily_practice(user_id: Optional[str] = None, current_user: str = Depends(get_current_user)):
     today = date.today()
     eng5 = _seed_cache.get("english_sentences", [])[:5]
     chi5 = _seed_cache.get("chinese_sentences", [])[:5]
     quote = _seed_cache.get("daily_quotes", [])[today.day % max(1, len(_seed_cache.get("daily_quotes", [])))]
+
+    # access control: if a user_id is provided, ensure it matches the current user
+    if user_id is not None and current_user != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     data = {
         "date": today.isoformat(),
@@ -222,7 +259,7 @@ async def register_user(req: UserRegisterRequest):
 
 
 @app.get("/users/{user_id}")
-async def get_user(user_id: str):
+async def get_user(user_id: str, current_user: str = Depends(get_current_user)):
     from .database import SessionLocal
     from .models import User as UserModel
     db = SessionLocal()
@@ -236,18 +273,21 @@ async def get_user(user_id: str):
 
 
 @app.get("/daily-practice/history/{user_id}")
-async def daily_practice_history(user_id: str):
+async def daily_practice_history(user_id: str, current_user: str = Depends(get_current_user)):
     from .database import SessionLocal
     from .models import DailyPracticeRecord
     db = SessionLocal()
     try:
         records = db.query(DailyPracticeRecord).filter(DailyPracticeRecord.user_id == user_id).order_by(DailyPracticeRecord.created_at).all()
+        # simple access control: only the owner can view history
+        if current_user != user_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
         return [{"id": r.id, "date": r.date.isoformat(), "content": r.content} for r in records]
     finally:
         db.close()
 
 @app.get("/users/{user_id}/stats")
-async def user_stats(user_id: str):
+async def user_stats(user_id: str, current_user: str = Depends(get_current_user)):
     """Return simple activity stats for a user"""
     from .database import SessionLocal
     from .models import EssaySubmission, DailyPracticeRecord, Checkin
@@ -282,3 +322,23 @@ async def get_quotes():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+class LoginRequest(BaseModel):
+    user_id: str
+
+@app.post("/auth/login")
+async def login(req: LoginRequest):
+    from .database import SessionLocal
+    from .models import User as UserModel
+    db = SessionLocal()
+    try:
+        user = db.query(UserModel).filter(UserModel.user_id == req.user_id).first()
+        if not user:
+            user = UserModel(user_id=req.user_id)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        token = create_access_token({"sub": user.user_id})
+        return {"access_token": token, "token_type": "bearer"}
+    finally:
+        db.close()
