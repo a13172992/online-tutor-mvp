@@ -52,6 +52,11 @@ class CheckinRequest(BaseModel):
     user_id: str
 
 
+class UserRegisterRequest(BaseModel):
+    user_id: str
+
+
+
 @app.post("/analyze-long-sentence")
 async def analyze_long_sentence(req: AnalyzeRequest):
     s = req.sentence.strip()
@@ -196,6 +201,50 @@ async def checkin(req: CheckinRequest):
     finally:
         db.close()
 
+
+@app.post("/users/register")
+async def register_user(req: UserRegisterRequest):
+    # Create a user if not exists, return user info
+    from .database import SessionLocal
+    from .models import User as UserModel
+    db = SessionLocal()
+    try:
+        existing = db.query(UserModel).filter(UserModel.user_id == req.user_id).first()
+        if existing:
+            return {"user_id": existing.user_id, "id": existing.id, "created_at": existing.created_at}
+        user = UserModel(user_id=req.user_id)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return {"user_id": user.user_id, "id": user.id, "created_at": user.created_at}
+    finally:
+        db.close()
+
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: str):
+    from .database import SessionLocal
+    from .models import User as UserModel
+    db = SessionLocal()
+    try:
+        user = db.query(UserModel).filter(UserModel.user_id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"user_id": user.user_id, "id": user.id, "created_at": user.created_at}
+    finally:
+        db.close()
+
+
+@app.get("/daily-practice/history/{user_id}")
+async def daily_practice_history(user_id: str):
+    from .database import SessionLocal
+    from .models import DailyPracticeRecord
+    db = SessionLocal()
+    try:
+        records = db.query(DailyPracticeRecord).filter(DailyPracticeRecord.user_id == user_id).order_by(DailyPracticeRecord.created_at).all()
+        return [{"id": r.id, "date": r.date.isoformat(), "content": r.content} for r in records]
+    finally:
+        db.close()
 
 @app.get("/model-essays")
 async def get_model_essays():
