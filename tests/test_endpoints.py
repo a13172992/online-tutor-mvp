@@ -3,6 +3,13 @@ from backend.main import app
 
 client = TestClient(app)
 
+def _token():
+    # ensure we have a token for authenticated endpoints
+    r = client.post("/auth/login", json={"user_id": "tester"})
+    if r.status_code == 200:
+        return r.json().get("access_token")
+    return None
+
 def test_health():
     r = client.get("/health")
     assert r.status_code == 200
@@ -22,8 +29,24 @@ def test_register_user():
     assert "user_id" in r.json()
 
 def test_daily_practice():
-    r = client.get("/daily-practice")
+    token = _token()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    r = client.get("/daily-practice", headers=headers)
     assert r.status_code == 200
     data = r.json()
     assert "date" in data
     assert "english_to_chinese" in data
+
+def test_daily_practice_history():
+    token = _token()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    r = client.get("/daily-practice/history/tester?page=1&size=5", headers=headers)
+    assert r.status_code == 200
+    data = r.json()
+    assert "items" in data
+
+def test_user_stats():
+    token = _token()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    r = client.get("/users/tester/stats", headers=headers)
+    assert r.status_code in (200, 201, 200)
