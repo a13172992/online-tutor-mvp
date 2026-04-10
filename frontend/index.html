@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Online Tutor MVP</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+      .card { border: 1px solid #ddd; padding: 16px; border-radius: 8px; }
+      h2 { font-size: 16px; margin: 0 0 8px; }
+      textarea { width: 100%; height: 120px; }
+      input, textarea, button { font-family: inherit; font-size: 14px; }
+      .btn { padding: 8px 12px; margin-top: 6px; cursor: pointer; }
+      pre { background: #f6f6f6; padding: 8px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <h1>Online Tutor MVP</h1>
+    <div class="grid">
+      <div class="card" id="analyze-card">
+        <h2>分析长难句并生成练习</h2>
+        <textarea id="sentence" placeholder="输入一个长难句..."></textarea>
+        <button class="btn" onclick="analyzeSentence()">分析并生成练习</button>
+        <div id="analysis-result"></div>
+      </div>
+      <div class="card" id="essay-card">
+        <h2>上传作文批改</h2>
+        <textarea id="essay-text" placeholder="粘贴作文文本..."></textarea>
+        <button class="btn" onclick="gradeEssayFromText()">批改作文</button>
+        <div id="essay-result"></div>
+      </div>
+    </div>
+    <hr/>
+    <div class="grid">
+      <div class="card" id="daily-card">
+        <h2>每日一练与范文</h2>
+        <button class="btn" onclick="loadDaily()">获取今日练习与范文</button>
+        <div id="daily-result"></div>
+      </div>
+      <div class="card" id="checkin-card">
+        <h2>每日打卡</h2>
+        <input id="user-id" placeholder="输入用户ID"/>
+        <button class="btn" onclick="checkIn()">打卡</button>
+        <div id="checkin-result"></div>
+      </div>
+    </div>
+    <script>
+      const base = 'http://localhost:8000';
+      async function analyzeSentence(){
+        const s = document.getElementById('sentence').value;
+        const res = await fetch(base + '/analyze-long-sentence', {method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({sentence: s})}).then(r=>r.json());
+        document.getElementById('analysis-result').innerHTML = '<pre>' + JSON.stringify(res, null, 2) + '</pre>';
+      }
+      async function gradeEssayFromText(){
+        const t = document.getElementById('essay-text').value;
+        const res = await fetch(base + '/grade-essay', {method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({text: t})}).then(r=>r.json());
+        document.getElementById('essay-result').innerHTML = '<pre>' + JSON.stringify(res, null, 2) + '</pre>';
+      }
+      async function loadDaily(){
+        const res = await fetch(base + '/daily-practice').then(r=>r.json());
+        document.getElementById('daily-result').innerHTML = '<pre>' + JSON.stringify(res, null, 2) + '</pre>';
+      }
+      async function checkIn(){
+        const user = document.getElementById('user-id').value;
+        const res = await fetch(base + '/checkin', {method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({user_id: user})}).then(r=>r.json());
+        document.getElementById('checkin-result').innerHTML = '<pre>' + JSON.stringify(res, null, 2) + '</pre>';
+      }
+    </script>
+  </body>
+  </html>
