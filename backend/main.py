@@ -18,7 +18,7 @@ This keeps backward compatibility for the endpoints while enabling persistence.
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 import json
 
@@ -243,6 +243,29 @@ async def daily_practice_history(user_id: str):
     try:
         records = db.query(DailyPracticeRecord).filter(DailyPracticeRecord.user_id == user_id).order_by(DailyPracticeRecord.created_at).all()
         return [{"id": r.id, "date": r.date.isoformat(), "content": r.content} for r in records]
+    finally:
+        db.close()
+
+@app.get("/users/{user_id}/stats")
+async def user_stats(user_id: str):
+    """Return simple activity stats for a user"""
+    from .database import SessionLocal
+    from .models import EssaySubmission, DailyPracticeRecord, Checkin
+    db = SessionLocal()
+    try:
+        today = date.today()
+        seven_days_ago = today - timedelta(days=6)
+        checkins_last7 = db.query(Checkin).filter(Checkin.user_id == user_id, Checkin.date >= seven_days_ago).count()
+        daily_practices = db.query(DailyPracticeRecord).filter(DailyPracticeRecord.user_id == user_id).count()
+        essays_total = db.query(EssaySubmission).count()
+        today_checked_in = db.query(Checkin).filter(Checkin.user_id == user_id, Checkin.date == today).first() is not None
+        return {
+            "user_id": user_id,
+            "checkins_last_7_days": checkins_last7,
+            "daily_practice_count": daily_practices,
+            "essay_count": essays_total,
+            "today_checked_in": today_checked_in
+        }
     finally:
         db.close()
 
