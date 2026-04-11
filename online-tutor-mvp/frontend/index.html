@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Online Tutor MVP - Web</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f6f7fb; color: #333; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; }
+    h1 { font-size: 20px; margin: 0; }
+    section { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; border: 1px solid #e6e6e6; }
+    h2 { font-size: 16px; margin: 0 0 8px; }
+    label { display: block; margin: 6px 0 4px; }
+    input[type="text"], input[type="number"], textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+    button { padding: 8px 12px; margin-top: 6px; border: none; border-radius: 4px; background: #4a90e2; color: white; cursor: pointer; }
+    button.secondary { background: #6c757d; }
+    pre { background: #f7f7f7; padding: 10px; border-radius: 4px; overflow: auto; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Online Tutor MVP</h1>
+        <div style="font-size:12px; color:#666;">简易网页版本：分析长句、作文批改、每日练习、打卡等</div>
+      </div>
+      <div id="auth-area">
+        <input id="user-id" placeholder="输入用户ID" style="width:180px;"/>
+        <button onclick="login()">登录</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section>
+        <h2>分析长难句并生成练习</h2>
+        <label for="sentence">输入长难句</label>
+        <textarea id="sentence" rows="4" placeholder="例如：Not until the sunrise did the city reveal its hidden beauty to the weary traveler."></textarea>
+        <button onclick="analyzeSentence()">分析并生成练习</button>
+        <div id="analysis-result"></div>
+      </section>
+      <section>
+        <h2>上传作文并批改</h2>
+        <label for="essay">作文文本</label>
+        <textarea id="essay" rows="6" placeholder="粘贴作文文本"></textarea>
+        <label for="essay-title">题目（可选）</label>
+        <input type="text" id="essay-title" placeholder="作文标题"/>
+        <button onclick="gradeEssay()">批改作文</button>
+        <div id="essay-result"></div>
+      </section>
+    </div>
+
+    <section>
+      <h2>每日练习与数据</h2>
+      <button onclick="getTodayPractice()">获取今日练习</button>
+      <div id="daily-result"></div>
+    </section>
+
+    <section>
+      <h2>每日练习历史（分页）</h2>
+      <div>
+        <label>页码</label>
+        <input type="number" id="hist-page" value="1" min="1" style="width:80px;"/>
+        <label>每页大小</label>
+        <input type="number" id="hist-size" value="5" min="1" style="width:80px;"/>
+      </div>
+      <button onclick="getHistory()">加载历史</button>
+      <div id="history-result"></div>
+    </section>
+
+    <section>
+      <h2>每日打卡</h2>
+      <button onclick="checkIn()">打卡</button>
+      <div id="checkin-result"></div>
+    </section>
+  </div>
+
+  <script>
+    const apiBase = 'http://localhost:8000';
+    let token = localStorage.getItem('tutor_token');
+    let currentUser = localStorage.getItem('tutor_user') || '';
+
+    function saveToken(t, user) {
+      token = t; localStorage.setItem('tutor_token', t); localStorage.setItem('tutor_user', user);
+      currentUser = user;
+    }
+
+    async function login() {
+      const userId = document.getElementById('user-id').value || currentUser;
+      if (!userId) { alert('请输入用户ID以登录'); return; }
+      try {
+        const res = await fetch(`${apiBase}/auth/login`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({user_id: userId}) });
+        const data = await res.json();
+        if (data && data.access_token) {
+          saveToken(data.access_token, userId);
+          alert('登录成功');
+        } else {
+          alert('登录失败，请重试');
+        }
+      } catch (e) {
+        console.error(e); alert('登录请求失败');
+      }
+    }
+
+    async function analyzeSentence() {
+      const s = document.getElementById('sentence').value;
+      const res = await fetch(`${apiBase}/analyze-long-sentence`, {method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({sentence:s})});
+      const data = await res.json();
+      document.getElementById('analysis-result').innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+    }
+
+    async function gradeEssay() {
+      const text = document.getElementById('essay').value;
+      const title = document.getElementById('essay-title').value;
+      const res = await fetch(`${apiBase}/grade-essay`, {method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({title: title, text: text})});
+      const data = await res.json();
+      document.getElementById('essay-result').innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+    }
+
+    async function getTodayPractice() {
+      const res = await fetch(`${apiBase}/daily-practice`, {headers: token ? { 'Authorization': 'Bearer ' + token } : {} }).catch(()=>null);
+      const data = res ? await res.json() : null;
+      document.getElementById('daily-result').innerHTML = data ? `<pre>${JSON.stringify(data, null, 2)}</pre>` : '请先登录并确保后端可访问';
+    }
+
+    async function getHistory() {
+      const user = currentUser;
+      const page = document.getElementById('hist-page').value || 1;
+      const size = document.getElementById('hist-size').value || 5;
+      const res = await fetch(`${apiBase}/daily-practice/history/${user}?page=${page}&size=${size}`, { headers: token ? { 'Authorization': 'Bearer ' + token } : {} }).catch(()=>null);
+      const data = res ? await res.json() : null;
+      document.getElementById('history-result').innerHTML = data ? `<pre>${JSON.stringify(data, null, 2)}</pre>` : '无历史或无法获取';
+    }
+
+    async function checkIn() {
+      if (!currentUser) { alert('请先登录设置用户ID后再打卡'); return; }
+      const res = await fetch(`${apiBase}/checkin`, {method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({user_id: currentUser})});
+      const data = await res.json();
+      document.getElementById('checkin-result').innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+    }
+  </script>
+</body>
+</html>
